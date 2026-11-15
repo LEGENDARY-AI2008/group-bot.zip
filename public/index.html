@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Group Bot · Connect</title>
+<style>
+  :root { --bg:#0e1411; --card:#16201a; --line:#25342b; --text:#e8f1ea; --mute:#8fa597; --accent:#25d366; --bad:#ff6b6b; }
+  @media (prefers-color-scheme: light) {
+    :root { --bg:#f2f6f3; --card:#ffffff; --line:#d8e3dc; --text:#13201a; --mute:#5b7064; --accent:#128c4a; --bad:#c0392b; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; min-height:100vh; display:flex; align-items:center; justify-content:center; padding:16px;
+         background:var(--bg); color:var(--text); font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+  .card { width:100%; max-width:420px; background:var(--card); border:1px solid var(--line); border-radius:16px; padding:24px; }
+  h1 { font-size:22px; margin:0 0 6px; }
+  p.sub { margin:0 0 20px; color:var(--mute); font-size:14px; line-height:1.5; }
+  label { display:block; font-size:13px; color:var(--mute); margin-bottom:6px; }
+  input { width:100%; padding:13px 14px; font-size:16px; border-radius:10px; border:1px solid var(--line);
+          background:transparent; color:var(--text); outline:none; }
+  input:focus { border-color:var(--accent); }
+  button { width:100%; margin-top:14px; padding:13px; font-size:16px; font-weight:600; border:0; border-radius:10px;
+           background:var(--accent); color:#06140b; cursor:pointer; }
+  button:disabled { opacity:.55; cursor:default; }
+  button.ghost { background:transparent; color:var(--text); border:1px solid var(--line); margin-top:10px; }
+  .err { color:var(--bad); font-size:14px; margin-top:12px; min-height:18px; }
+  .hidden { display:none; }
+  .code { font-size:34px; letter-spacing:4px; font-weight:700; text-align:center; padding:18px 8px; margin:6px 0 4px;
+          border:1px dashed var(--accent); border-radius:12px; font-variant-numeric: tabular-nums; }
+  ol { padding-left:20px; margin:14px 0 0; color:var(--mute); font-size:14px; line-height:1.7; }
+  ol b { color:var(--text); }
+  .ok { text-align:center; }
+  .ok .tick { font-size:46px; }
+  .note { margin-top:18px; font-size:12px; color:var(--mute); line-height:1.5; }
+</style>
+</head>
+<body>
+<div class="card">
+
+  <div id="stepForm">
+    <h1>Connect your bot</h1>
+    <p class="sub">Enter the WhatsApp number you want the bot to run on. You'll get a code to link it from your phone.</p>
+    <label for="num">WhatsApp number (with country code)</label>
+    <input id="num" type="tel" inputmode="numeric" placeholder="2348012345678" autocomplete="tel">
+    <button id="go">Get pairing code</button>
+    <div class="err" id="err"></div>
+  </div>
+
+  <div id="stepCode" class="hidden">
+    <h1>Enter this code</h1>
+    <p class="sub">Open WhatsApp on <b id="shownNum"></b> and link it with this code.</p>
+    <div class="code" id="code">----</div>
+    <button class="ghost" id="copy">Copy code</button>
+    <ol>
+      <li>Open <b>WhatsApp</b> on that phone</li>
+      <li>Tap <b>Settings → Linked devices → Link a device</b></li>
+      <li>Tap <b>Link with phone number instead</b></li>
+      <li>Type the code above</li>
+    </ol>
+    <div class="note">The code expires in a few minutes. This page updates by itself once you're linked.</div>
+    <button class="ghost" id="again">Use a different number</button>
+  </div>
+
+  <div id="stepDone" class="hidden ok">
+    <div class="tick">✅</div>
+    <h1>Bot connected</h1>
+    <p class="sub">Check your WhatsApp for a confirmation message. Add the number to a group, make it admin, and send <b>.menu</b>.</p>
+  </div>
+
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let poll = null;
+let currentNumber = '';
+
+function show(step) {
+  ['stepForm', 'stepCode', 'stepDone'].forEach((s) => $(s).classList.toggle('hidden', s !== step));
+}
+
+async function getCode() {
+  $('err').textContent = '';
+  const number = $('num').value.replace(/\D/g, '');
+  if (number.length < 8) { $('err').textContent = 'Enter your full number with country code.'; return; }
+  $('go').disabled = true;
+  $('go').textContent = 'Getting code…';
+  try {
+    const r = await fetch('/api/pair', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ number }),
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || 'Something went wrong.');
+    currentNumber = number;
+    $('code').textContent = data.code;
+    $('shownNum').textContent = '+' + number;
+    show('stepCode');
+    startPolling();
+  } catch (e) {
+    $('err').textContent = e.message;
+  } finally {
+    $('go').disabled = false;
+    $('go').textContent = 'Get pairing code';
+  }
+}
+
+function startPolling() {
+  clearInterval(poll);
+  let ticks = 0;
+  poll = setInterval(async () => {
+    ticks++;
+    try {
+      const r = await fetch('/api/status?number=' + currentNumber);
+      const { status } = await r.json();
+      if (status === 'connected') { clearInterval(poll); show('stepDone'); }
+      if (status === 'none' || ticks > 90) { clearInterval(poll); if (status === 'none') { show('stepForm'); $('err').textContent = 'Code expired. Request a new one.'; } }
+    } catch {}
+  }, 2000);
+}
+
+$('go').addEventListener('click', getCode);
+$('num').addEventListener('keydown', (e) => { if (e.key === 'Enter') getCode(); });
+$('copy').addEventListener('click', async () => {
+  try { await navigator.clipboard.writeText($('code').textContent.replace('-', '')); $('copy').textContent = 'Copied ✓'; }
+  catch { $('copy').textContent = 'Select the code to copy'; }
+  setTimeout(() => ($('copy').textContent = 'Copy code'), 1800);
+});
+$('again').addEventListener('click', () => { clearInterval(poll); show('stepForm'); });
+</script>
+</body>
+</html>
