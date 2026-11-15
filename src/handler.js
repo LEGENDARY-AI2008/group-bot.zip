@@ -77,12 +77,12 @@ async function handleMessage(sock, bot, msg) {
   const jid = msg.key.remoteJid;
   if (!jid || jid === 'status@broadcast') return;
 
+  // Protection (jail, mute, switches) must see EVERY group message, not only commands,
+  // so the command lookup happens after the protection check below.
   const { text } = getContent(msg);
-  if (!text.startsWith(PREFIX)) return;
-
-  const [cmdName, ...args] = text.slice(PREFIX.length).trim().split(/\s+/);
-  const cmd = commands[cmdName?.toLowerCase()];
-  if (!cmd) return;
+  const isCommand = text.startsWith(PREFIX);
+  const [cmdName, ...args] = isCommand ? text.slice(PREFIX.length).trim().split(/\s+/) : [];
+  const cmd = isCommand ? commands[cmdName?.toLowerCase()] : null;
 
   const isGroup = jid.endsWith('@g.us');
   const reply = (t) => sock.sendMessage(jid, { text: t }, { quoted: msg });
@@ -99,12 +99,6 @@ async function handleMessage(sock, bot, msg) {
   const sudoList = getSudoList(bot);
   const isMaster = msg.key.fromMe || MASTER_NUMBERS.some((n) => senderIds.has(n));
   const isSudo = isMaster || sudoList.some((n) => senderIds.has(n));
-  const mode = getBotSetting(bot, 'mode', 'public');
-  if (mode === 'private' && !isSudo) return;
-
-  if (cmd.sudoOnly && !isSudo) return reply(card('Masters only', ['This command is for the master and sudo users.']));
-  if (cmd.groupOnly && !isGroup) return reply(m.groupOnly());
-
   let metadata = null;
   let isAdmin = false;
   let botIsAdmin = false;
@@ -138,6 +132,14 @@ async function handleMessage(sock, bot, msg) {
     const handled = await enforce(ctx);
     if (handled) return;
   }
+
+  // Everything below is for commands only.
+  if (!cmd) return;
+
+  const mode = getBotSetting(bot, 'mode', 'public');
+  if (mode === 'private' && !isSudo) return;
+  if (cmd.sudoOnly && !isSudo) return reply(card('Masters only', ['This command is for the master and sudo users.']));
+  if (cmd.groupOnly && !isGroup) return reply(m.groupOnly());
 
   if (cmd.adminOnly && !isAdmin && !isMaster && !isSudo && !msg.key.fromMe) {
     return reply(m.notAdmin());

@@ -15,8 +15,11 @@ const burst = new Map(); // antispam
 async function del(sock, jid, key) {
   try {
     await sock.sendMessage(jid, { delete: key });
-  } catch {
-    /* needs the bot to be admin */
+    return true;
+  } catch (err) {
+    // Usually means the bot is not a group admin
+    console.error(`[delete failed] ${jid}:`, err?.message || err);
+    return false;
   }
 }
 
