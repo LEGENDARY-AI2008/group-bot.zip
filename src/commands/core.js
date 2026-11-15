@@ -5,7 +5,7 @@ import { groupExtraCommands } from './groupextra.js';
 import { botCommands } from './bot.js';
 import { BOT_NAME, MASTER_NAME, MASTER_NUMBERS, PREFIX, card } from '../style.js';
 
-const list = (set) => Object.keys(set).sort().map((c) => `${PREFIX}${c}`).join('  ');
+const list = (set) => Object.keys(set).sort().map((c) => `${PREFIX}${c}`).join('\n');
 
 export const coreCommands = {
   ping: {
