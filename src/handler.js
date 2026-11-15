@@ -1,10 +1,24 @@
 import { jidNormalizedUser } from '@whiskeysockets/baileys';
 import { groupCommands } from './commands/group.js';
 import { coreCommands } from './commands/core.js';
-import { getGroup } from './db.js';
+import { moderationCommands } from './commands/moderation.js';
+import { protectionCommands } from './commands/protection.js';
+import { groupExtraCommands } from './commands/groupextra.js';
+import { botCommands } from './commands/bot.js';
+import { getGroup, getBotSetting } from './db.js';
+import { PREFIX, MASTER_NUMBERS, msg as m, card } from './style.js';
+import { enforce } from './enforce.js';
+import { collectIds, sameUser, isAdminRole, userPart, getContent } from './util.js';
+import { getSudoList } from './commands/bot.js';
 
-const PREFIX = process.env.PREFIX || '.';
-const commands = { ...coreCommands, ...groupCommands };
+const commands = {
+  ...coreCommands,
+  ...groupCommands,
+  ...moderationCommands,
+  ...protectionCommands,
+  ...groupExtraCommands,
+  ...botCommands,
+};
 
 export function attachHandlers(sock, bot) {
   // Welcome and goodbye messages
@@ -28,6 +42,18 @@ export function attachHandlers(sock, bot) {
     }
   });
 
+  // Anti-call: reject incoming calls when switched on
+  sock.ev.on('call', async (calls) => {
+    if (getBotSetting(bot, 'anticall', '0') !== '1') return;
+    for (const c of calls) {
+      try {
+        if (c.status === 'offer') await sock.rejectCall(c.id, c.from);
+      } catch {
+        /* ignore */
+      }
+    }
+  });
+
   // Commands
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
     if (type !== 'notify') return;
@@ -41,17 +67,17 @@ export function attachHandlers(sock, bot) {
   });
 }
 
+function isAdminOf(metadata, ids) {
+  const p = metadata.participants.find((x) => sameUser(x, ids));
+  return { p, admin: !!p && isAdminRole(p) };
+}
+
 async function handleMessage(sock, bot, msg) {
   if (!msg.message) return;
   const jid = msg.key.remoteJid;
   if (!jid || jid === 'status@broadcast') return;
 
-  const text =
-    msg.message.conversation ||
-    msg.message.extendedTextMessage?.text ||
-    msg.message.imageMessage?.caption ||
-    msg.message.videoMessage?.caption ||
-    '';
+  const { text } = getContent(msg);
   if (!text.startsWith(PREFIX)) return;
 
   const [cmdName, ...args] = text.slice(PREFIX.length).trim().split(/\s+/);
@@ -62,33 +88,68 @@ async function handleMessage(sock, bot, msg) {
   const reply = (t) => sock.sendMessage(jid, { text: t }, { quoted: msg });
   const botJid = jidNormalizedUser(sock.user.id);
 
-  if (cmd.groupOnly && !isGroup) return reply('This command works in groups only.');
+  // Public / private mode. Private = only the master and sudo users get answers.
+  const senderRaw = msg.key.participant || jid;
+  const senderIds = collectIds([
+    msg.key.participant,
+    msg.key.participantAlt,
+    msg.key.participantPn,
+    msg.key.remoteJidAlt,
+  ]);
+  const sudoList = getSudoList(bot);
+  const isMaster = msg.key.fromMe || MASTER_NUMBERS.some((n) => senderIds.has(n));
+  const isSudo = isMaster || sudoList.some((n) => senderIds.has(n));
+  const mode = getBotSetting(bot, 'mode', 'public');
+  if (mode === 'private' && !isSudo) return;
+
+  if (cmd.sudoOnly && !isSudo) return reply(card('Masters only', ['This command is for the master and sudo users.']));
+  if (cmd.groupOnly && !isGroup) return reply(m.groupOnly());
 
   let metadata = null;
   let isAdmin = false;
   let botIsAdmin = false;
+  let userKey = userPart(senderRaw);
 
   if (isGroup) {
     metadata = await sock.groupMetadata(jid);
-    const sender = jidNormalizedUser(msg.key.participant || jid);
-    const me = metadata.participants.find((p) => jidNormalizedUser(p.id) === sender);
-    const bt = metadata.participants.find((p) => jidNormalizedUser(p.id) === botJid);
-    isAdmin = !!me?.admin;
-    botIsAdmin = !!bt?.admin;
+    const botIds = collectIds([sock.user?.id, sock.user?.lid]);
+    const me = isAdminOf(metadata, senderIds);
+    const bt = isAdminOf(metadata, botIds);
+    isAdmin = me.admin;
+    botIsAdmin = bt.admin;
+    // Stable key for storage: the phone number when WhatsApp gives it
+    userKey = (me.p && (userPart(me.p.phoneNumber) || userPart(me.p.id))) || userKey;
+
+    if (process.env.DEBUG_ADMIN === '1') {
+      console.log(`[${bot}] admin check`, { sender: [...senderIds], matched: !!me.p, isAdmin, botIsAdmin });
+    }
   }
 
-  // The owner (the account the bot runs on) always counts as admin-level
-  if (cmd.adminOnly && !isAdmin && !msg.key.fromMe) {
-    return reply('Only group admins can use this command.');
+  const senderJid = isGroup && msg.key.participant ? msg.key.participant : jid;
+  const ctx = {
+    sock, bot, msg, jid, args, metadata, reply, botJid,
+    prefix: PREFIX, isGroup, isAdmin, botIsAdmin, isMaster, isSudo,
+    userKey, senderJid,
+  };
+
+  // Protection checks run before commands. A member who breaks a rule has their
+  // message removed and earns a strike, unless the command itself is what they sent.
+  if (isGroup && !msg.key.fromMe) {
+    const handled = await enforce(ctx);
+    if (handled) return;
+  }
+
+  if (cmd.adminOnly && !isAdmin && !isMaster && !isSudo && !msg.key.fromMe) {
+    return reply(m.notAdmin());
   }
   if (cmd.botAdminOnly && !botIsAdmin) {
-    return reply('I need to be a group admin to do that.');
+    return reply(m.botNotAdmin());
   }
 
   try {
-    await cmd.run({ sock, bot, msg, jid, args, metadata, reply, botJid });
+    await cmd.run(ctx);
   } catch (err) {
     console.error(`[${bot}] .${cmdName} failed:`, err);
-    await reply(`Something went wrong running .${cmdName}.`);
+    await reply(m.error(cmdName));
   }
 }
