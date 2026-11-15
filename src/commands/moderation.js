@@ -110,9 +110,10 @@ export const moderationCommands = {
       const until = Date.now() + mins * 60000;
       targets.forEach((j) => setMember(ctx.bot, ctx.jid, resolveKey(ctx.metadata, j), 'jail', reason, until));
       return say(
-        ctx, 'Cell door locked',
+        ctx, '⚖️ Judgement passed',
         [
-          `🔒 ${names(targets)} taken to the cell.`,
+          `⚖️ ${names(targets)}, you have been judged.`,
+          `🔒 Taken to the cell.`,
           `Charge: ${reason}`,
           `Sentence: ${mins} min`,
           'Messages from the cell are removed until release.',
@@ -133,7 +134,7 @@ export const moderationCommands = {
       const targets = targetJids(ctx);
       if (!targets.length) return ctx.reply(`Usage: ${ctx.prefix}unjail @user  or  ${ctx.prefix}unjail all`);
       targets.forEach((j) => delMember(ctx.bot, ctx.jid, resolveKey(ctx.metadata, j), 'jail'));
-      return say(ctx, 'Parole granted', [`🔓 ${names(targets)} released. Tread carefully.`], targets);
+      return say(ctx, '⚖️ Verdict overturned', [`⚖️ ${names(targets)}, the court releases you. Tread carefully.`], targets);
     },
   },
 
