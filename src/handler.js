@@ -6,6 +6,8 @@ import { protectionCommands } from './commands/protection.js';
 import { groupExtraCommands } from './commands/groupextra.js';
 import { botCommands } from './commands/bot.js';
 import { funCommands } from './commands/fun.js';
+import { mediaCommands } from './commands/media.js';
+import { deviceCommands } from './commands/device.js';
 import { getGroup, getBotSetting } from './db.js';
 import { PREFIX, MASTER_NUMBERS, msg as m, card } from './style.js';
 import { enforce } from './enforce.js';
@@ -20,6 +22,8 @@ const commands = {
   ...groupExtraCommands,
   ...botCommands,
   ...funCommands,
+  ...mediaCommands,
+  ...deviceCommands,
 };
 
 export function attachHandlers(sock, bot) {
