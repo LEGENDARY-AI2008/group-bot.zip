@@ -1,5 +1,11 @@
 import { groupCommands } from './group.js';
+import { moderationCommands } from './moderation.js';
+import { protectionCommands } from './protection.js';
+import { groupExtraCommands } from './groupextra.js';
+import { botCommands } from './bot.js';
 import { BOT_NAME, MASTER_NAME, MASTER_NUMBERS, PREFIX, card } from '../style.js';
+
+const list = (set) => Object.keys(set).sort().map((c) => `${PREFIX}${c}`).join('  ');
 
 export const coreCommands = {
   ping: {
@@ -20,16 +26,27 @@ export const coreCommands = {
 
   menu: {
     async run(ctx) {
-      const group = Object.keys(groupCommands).map((c) => `${PREFIX}${c}`).join('\n');
       return ctx.reply(
         card(`${BOT_NAME} menu`, [
           `Prefix: *${PREFIX}*`,
           '',
           '👥 *Group control*',
-          group,
+          list(groupCommands),
           '',
-          '⚡ *Bot*',
-          `${PREFIX}menu\n${PREFIX}ping\n${PREFIX}owner`,
+          '⚔️ *Moderation*',
+          list(moderationCommands),
+          '',
+          '🛡️ *Protection*',
+          list(protectionCommands),
+          '',
+          '🧰 *Group tools*',
+          list(groupExtraCommands),
+          '',
+          '⚡ *Bot control*',
+          list(botCommands),
+          '',
+          '⚡ *Basics*',
+          `${PREFIX}menu  ${PREFIX}ping  ${PREFIX}owner`,
         ])
       );
     },
