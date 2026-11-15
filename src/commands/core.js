@@ -3,6 +3,7 @@ import { moderationCommands } from './moderation.js';
 import { protectionCommands } from './protection.js';
 import { groupExtraCommands } from './groupextra.js';
 import { botCommands } from './bot.js';
+import { funCommands } from './fun.js';
 import { BOT_NAME, MASTER_NAME, MASTER_NUMBERS, PREFIX, card } from '../style.js';
 
 const list = (set) => Object.keys(set).sort().map((c) => `${PREFIX}${c}`).join('\n');
@@ -44,6 +45,9 @@ export const coreCommands = {
           '',
           '⚡ *Bot control*',
           list(botCommands),
+          '',
+          '🎭 *Fun*',
+          list(funCommands),
           '',
           '⚡ *Basics*',
           `${PREFIX}menu  ${PREFIX}ping  ${PREFIX}owner`,
